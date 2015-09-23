@@ -1,11 +1,9 @@
 #!/usr/bin/env python
 #This file is part of DataDownloader -> see the LICENSE file
 import obspy.core as co
-import numpy as np
-from obspy.iris import Client as Iris
+from obspy.fdsn.client import Client
 import argparse
 import os
-import glob
 
 #==== MAIN FUNCTION ====
 def main():
@@ -18,114 +16,104 @@ def main():
    This mask could be used to check whether files already exist
    command: ./downloader.py --help
    """
-   args = readArguments()
-   dataList,mask = checkAvailability(args)
-   baseDir, dataList, mask = createDir(args, dataList, mask) #create directory and mask already existing stations
-   mask = getWaveforms(baseDir,dataList,mask)
-   finalOutput(dataList,mask)
+   args      = readArguments()
+   baseDir   = createDir(args) #create directory and mask already existing stations
+   events    = getEvents(args)
+   inventory = getStationXML(args,events)
+   waveforms = getWaveforms(args, inventory)
+   #waveforms.remove_response(output='DISP',zero_mean=True, taper=True)
+   finalOutput(baseDir,waveforms, inventory, events)
    return 0
 
 #==== READING AND DIRECTORIES ====
 def readArguments():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('mintime', help='start time (e.g.: 2005-10-7-12-5)')
-    parser.add_argument('maxtime', help='start time (e.g.: 2005-11-0-0-0)')
-    parser.add_argument('identity', help='network.station.location.channel (e.g. IU.AFI.00.VHZ)')
+    parser = argparse.ArgumentParser(description='downloads data from IRIS using obspy.')
+    parser.add_argument('starttime',   help='start time (e.g.: 2005-10-7-12-5)')
+    parser.add_argument('endtime',     help='end time (e.g.: 2005-11-0-0-0)')
+    parser.add_argument('identity',    help='network.station.location.channel (e.g. IU.AFI.00.VHZ)')
+    parser.add_argument("--minradius", help="minimum distance", default=None)
+    parser.add_argument("--maxradius", help="maximum distance", default=None)
     args = parser.parse_args()
-    mintime = co.UTCDateTime(args.mintime)
-    print mintime
-    maxtime = co.UTCDateTime(args.maxtime)
     network, station, location, channel = args.identity.split('.')
-    return network, station, location, channel, mintime, maxtime
+
+    argdict = {}
+    argdict['starttime']  = co.UTCDateTime(args.starttime)
+    argdict['endtime']  = co.UTCDateTime(args.endtime)
+    argdict['network']  = network
+    argdict['station']  = station
+    argdict['location'] = location
+    argdict['channel']  = channel
+    argdict['minradius']  = args.minradius
+    argdict['maxradius']  = args.maxradius
+    return argdict
 
 #---- create Directories ----
-def createDir(args, dataList, mask):
-    mintime = args[4]
-    maxtime = args[5]
-    dirName = 'data/%s-%s'%(mintime.date,maxtime.date)
-    wfdirectory = dirName + '/Waveforms'
-    pazdirectory = dirName + '/PAZ'
+def createDir(args):
+    dirName = os.path.join('data','%s-%s'%(args['starttime'].date,args['endtime'].date))
 
-    if os.path.isdir(wfdirectory) and os.path.isdir(pazdirectory):
-        print 'directory exists. Checking for already existing files...'
-        saclist = [f.rsplit('/')[-1] for f in glob.glob(wfdirectory + '/*.sac')]
-        pazlist = [f.rsplit('/')[-1] for f in glob.glob(pazdirectory + '/*.paz')]
-        for i,stat in enumerate(dataList):
-            sacname = '.'.join(stat[:4])+'.sac'
-            pazname = '.'.join(stat[:4])+'.paz'
-            if (sacname in saclist) and (pazname in pazlist):
-                mask[i] = False
-        print '%d of %d stations already existed.'%(np.count_nonzero(np.invert(mask)),len(dataList))
-        newDataList = [stat for i,stat in enumerate(dataList) if mask[i] == True]
-        return dirName, newDataList , np.ones(len(newDataList),dtype=np.bool)
-
-    else:
-        try:
-          os.makedirs(dirName)
-          os.makedirs(dirName + '/Waveforms/')
-          os.makedirs(dirName + '/PAZ/')
-          return dirName, dataList
-        except Exception:
-          print 'Can\'t create directory tree'
-          return dirName, dataList, np.ones(len(dataList),dtype=np.bool)
-#---- check for existing waveforms or PAZ files ----
+    try:
+      os.makedirs(dirName)
+      print 'saving under path:',dirName
+      return dirName
+    except OSError, err:
+      if err.errno == 17:
+          print '\n directory exists!'
+          return dirName
+      else:
+          print err
+          print '\nCan\'t create directory tree'
+          raise
 
 #==== DOWNLOAD FROM IRIS ====
-#---- check availability ----
-def checkAvailability(args):
-    print 'checking data availability for net: %s stat:%s loc: %s chan: %s\n t1 = %s, t2 = %s:'%args
-    try:
-      client_iris = Iris()
-      availData = client_iris.availability(*args)
-      print 'Data is available for: '
-      print availData
-      dataList = [tuple(stat.split()) for stat in availData.strip().split('\n')]
-      mask = np.ones(len(dataList),dtype=bool)
-      return dataList, mask
-    except Exception:
-      print 'Exception in checking availability of waveforms'; raise
-      return 1
+def getStationXML(args,events):
+    print '\n---- checking data availability ----'
+    print args
+    client = Client('Iris')
+    if args['minradius'] or args['maxradius']:
+        lat = events[0].origins[0].latitude
+        lon = events[0].origins[0].longitude
+        print 'searching around event location:',lat,lon
+        inventory = client.get_stations(level='response',latitude=lat,longitude=lon,**args)
+    else:
+        inventory = client.get_stations(level='response',**args)
+    print '\nData is available for: '
+    print inventory
+    return inventory
 
-#---- downloading waveforms ----
-def getWaveforms(baseDir, dataList, mask):
-    NWaveforms = len(dataList)
-    wfdirectory = baseDir + '/Waveforms'
-    pazdirectory = baseDir + '/PAZ'
-    client_iris = Iris()
-    for i,data in enumerate(dataList):
-      #---- download waveform ----
-      if mask[i]:
-        try:
-          waveform = client_iris.getWaveform(*data)[0]
-        except Exception:
-          print 'NO Waveform AVAILABLE %d/%d'%(i+1,NWaveforms) + ' for: %s.%s.%s.%s'%data[:-2]
-          mask[i] = False
-      #---- download paz and write to File ----
-      if mask[i]:
-        try:
-          paz = client_iris.sacpz(*data)
-          pazfile = open(pazdirectory + '/%s.%s.%s.%s.paz'%data[:-2],'w')
-          pazfile.write(paz)
-          pazfile.close()
-          print 'Saving Paz file %d/%d'%(i+1,NWaveforms) + ' for: %s.%s.%s.%s  ---> DONE'%data[:-2]
-          waveform.write(wfdirectory + '/%s.%s.%s.%s.sac'%data[:-2],'SAC')
-          print 'Saving Waveform %d/%d'%(i+1,NWaveforms) + ' for: %s.%s.%s.%s  ---> DONE'%data[:-2]
-        except Exception,e:
-          print e
-          print 'NO Paz AVAILABLE %d/%d'%(i+1,NWaveforms) + ' for: %s.%s.%s.%s  ---> DONE'%data[:-2]
-          mask[i] = False
-    return mask
+def getEvents(args):
+    client = Client('Iris')
+    events = client.get_events(minmag=6.0,starttime=args['starttime'],endtime=args['endtime'])
+    print 'found these events:'
+    print events
+    return events
+
+def getWaveforms(args, inventory):
+    traces = inventory.get_contents()['channels']
+    ntraces = len(traces)
+    print 'Downloading {:d} waveforms'.format(ntraces)
+    print traces
+
+    t1 = args['starttime']
+    t2 = args['endtime']
+    downloadlist = [tuple(trace.split('.'))+(t1,t2) for trace in traces]
+
+    parameters = {'attach_response':False,
+                  'minimumlength':10.*3600.,
+                  'longestonly':True}
+    client = Client('Iris')
+    waveforms = client.get_waveforms_bulk(downloadlist,**parameters)
+    print 'downloaded waveforms'
+    print waveforms
+    return waveforms
 
 #==== FINAL OUTPUT ====
-def finalOutput(dataList,mask):
-    print '\n==== DOWNLOADING DONE. ====\n\n'
-    print 'Some Statistics:'
-    print '%d of %d stations were downloaded.'%(np.count_nonzero(mask),len(dataList))
-    print 'failed or existing stations are:'
-    ifailed = np.nonzero(np.invert(mask))[0]
-    for i in ifailed:
-        print dataList[i],' '
-    print ''
+def finalOutput(baseDir, waveforms, inventory, events):
+    print '\n==== DOWNLOAD DONE. ====\n\n'
+    waveforms.write(baseDir+'/waveforms.mseed',format='MSEED')
+    inventory.write(baseDir+'/stations.xml',format='STATIONXML')
+    events.write(baseDir+'/events.xml',format='QUAKEML')
+    print 'waveforms, stationxml and quakeml files saved in dir:',baseDir
 
+#==== EXECUTE ====
 if __name__== "__main__":
     main()
