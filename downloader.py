@@ -8,16 +8,14 @@ import os
 #==== MAIN FUNCTION ====
 def main():
    """
-   this script does:
-   I. first download continuous data from IRIS
-   II. save DATA as SAC
-   III. download PAZ files
-   Errors during the download process are saved in the boolean array "mask"
-   This mask could be used to check whether files already exist
+   This script downloads waveforms, events and station information
+   for a given time period and given station search string.
+   More info from:
+
    command: ./downloader.py --help
    """
    args      = readArguments()
-   baseDir   = createDir(args) #create directory and mask already existing stations
+   baseDir   = createDir(args)
    events    = getEvents(args)
    inventory = getStationXML(args,events)
    waveforms = getWaveforms(args, inventory)
