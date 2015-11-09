@@ -15,6 +15,7 @@ class NDKFile(object):
             event = NDKEvent(block)
             self.events.append(event)
             self.names.append(event.cmtid)
+        self.nevents = len(self.events)
 
     def findname(self,name):
         try:
@@ -29,7 +30,10 @@ class NDKFile(object):
 
 class NDKEvent(object):
     def __init__(self,ndkblock):
-        #reported information:
+        #save full info
+        self.block = ''.join(ndkblock)
+
+        #extract specific information:
         timestr = ndkblock[0][5:27]
         fmt = re.compile( '(\d*)/(\d*)/(\d*) (\d*):(\d*):(\d*).\d' )
         match = re.match(fmt,timestr)
