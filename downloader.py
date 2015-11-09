@@ -7,21 +7,37 @@ import os
 
 #==== MAIN FUNCTION ====
 def main():
-   """
-   This script downloads waveforms, events and station information
-   for a given time period and given station search string.
-   More info from:
+    """
+    This script downloads waveforms, events and station information
+    for a given time period and given station search string.
+    More info from:
 
-   command: ./downloader.py --help
-   """
-   args      = readArguments()
-   baseDir   = createDir(args)
-   events    = getEvents(args)
-   inventory = getStationXML(args,events)
-   waveforms = getWaveforms(args, inventory)
-   #waveforms.remove_response(output='DISP',zero_mean=True, taper=True)
-   finalOutput(baseDir,waveforms, inventory, events)
-   return 0
+    command: ./downloader.py --help
+    """
+    args      = readArguments()
+    baseDir   = createDir(args)
+    download(args,baseDir)
+
+#==== download function ====
+def download(**kwargs):
+    """
+    downloads event, station and waveform data for the given time range and
+    station id
+
+    args:
+    starttime = UTCDateTime()
+    endtime   = UTCDateTime()
+    network   = '*'
+    station   = 'ANMO,DBSD'
+    location  = '*'
+    channel   = 'VHZ'
+    minradius = minimum station distance 
+    maxradius = maximum station distance
+    """
+    events    = getEvents(kwargs)
+    inventory = getStationXML(kwargs,events)
+    waveforms = getWaveforms(kwargs, inventory)
+    finalOutput(kwargs['baseDir'], waveforms, inventory, events)
 
 #==== READING AND DIRECTORIES ====
 def readArguments():
@@ -36,11 +52,11 @@ def readArguments():
 
     argdict = {}
     argdict['starttime']  = co.UTCDateTime(args.starttime)
-    argdict['endtime']  = co.UTCDateTime(args.endtime)
-    argdict['network']  = network
-    argdict['station']  = station
-    argdict['location'] = location
-    argdict['channel']  = channel
+    argdict['endtime']    = co.UTCDateTime(args.endtime)
+    argdict['network']    = network
+    argdict['station']    = station
+    argdict['location']   = location
+    argdict['channel']    = channel
     argdict['minradius']  = args.minradius
     argdict['maxradius']  = args.maxradius
     return argdict
@@ -80,7 +96,7 @@ def getStationXML(args,events):
 
 def getEvents(args):
     client = Client('Iris')
-    events = client.get_events(minmag=6.0,starttime=args['starttime'],endtime=args['endtime'])
+    events = client.get_events(minmag=5.0,starttime=args['starttime'],endtime=args['endtime'])
     print 'found these events:'
     print events
     return events
@@ -96,7 +112,7 @@ def getWaveforms(args, inventory):
     downloadlist = [tuple(trace.split('.'))+(t1,t2) for trace in traces]
 
     parameters = {'attach_response':False,
-                  'minimumlength':10.*3600.,
+                  #'minimumlength':10.*3600.,
                   'longestonly':True}
     client = Client('Iris')
     waveforms = client.get_waveforms_bulk(downloadlist,**parameters)
