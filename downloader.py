@@ -16,10 +16,11 @@ def main():
     """
     args      = readArguments()
     baseDir   = createDir(args)
-    download(args,baseDir)
+    events,inventory,waveforms = download(args,baseDir)
+    finalOutput(args['baseDir'], waveforms, inventory, events)
 
 #==== download function ====
-def download(**kwargs):
+def download(kwargs):
     """
     downloads event, station and waveform data for the given time range and
     station id
@@ -37,7 +38,7 @@ def download(**kwargs):
     events    = getEvents(kwargs)
     inventory = getStationXML(kwargs,events)
     waveforms = getWaveforms(kwargs, inventory)
-    finalOutput(kwargs['baseDir'], waveforms, inventory, events)
+    return events,inventory,waveforms
 
 #==== READING AND DIRECTORIES ====
 def readArguments():
