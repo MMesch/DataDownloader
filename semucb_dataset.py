@@ -3,15 +3,9 @@
 this script redownloads waveform data from iris, etc to get an idea about the pre-event
 noise level of each data trace from SEMUCB
 """
-from obspy.core import read,Stream
 from obspy.fdsn.client import Client
 from ndk_rec_file import NDKFile,RecFile
-from scipy.interpolate import LSQUnivariateSpline
-import argparse
-import numpy as np
 import os
-
-import mydebug
 
 #==== MAIN FUNCTION ====
 def main():
@@ -31,7 +25,6 @@ def main():
     stcatalogue = RecFile(fname_stcatalogue)
     print 'retrieved {:d} stations'.format(stcatalogue.ndata)
     unique_stations = set(stcatalogue.stations)
-    station_list    = ','.join(unique_stations)
     print 'unique stations: {}'.format(len(unique_stations))
 
     print 'reading event catalogue...'
@@ -44,23 +37,48 @@ def main():
     client = Client('Iris')
     for name,event in zip(evcatalogue.names,evcatalogue.events):
         print '---- {:s} ----'.format(name)
-        fname  = '{:s}_data'.format(name)
-        fname_mseed = os.path.join(datadir,fname + '.mseed')
+        fname_events   = '{:s}_events.xml'.format(name)
+        fname_stations = '{:s}_stations.xml'.format(name)
+        fname_mseed    = '{:s}_waveforms.mseed'.format(name)
+
+        path_stations = os.path.join(datadir,fname_stations)
+        path_events   = os.path.join(datadir,fname_events)
+        path_mseed    = os.path.join(datadir,fname_mseed)
+
+        #---- check if data exist ----
+        if os.path.exists(path_mseed)\
+        and os.path.exists(path_events)\
+        and os.path.exists(path_stations):
+            print 'data already exists, continuing ...'
+            continue
 
         #---- prepare redownload ----
         tstart = event.origin+event.ctime+t1
         tend   = event.origin+event.ctime+t2
-        print 'downloading from {} to {}'.format(tstart,tend)
-
         downloadlist = [('*',stat,'*','LHZ',tstart,tend) for stat in unique_stations]
 
-        inventory = client.get_stations_bulk(downloadlist,level='response')
-        print inventory
-        events = client.get_events(minmag=5.0,starttime=tstart,endtime=tend)
-        print events
-        waveforms = client.get_waveforms_bulk(downloadlist,
+        print 'downloading ...'.format(tstart,tend)
+        try:
+            inventory = client.get_stations_bulk(downloadlist,level='response')
+            events    = client.get_events(minmag=5.0,starttime=tstart,endtime=tend)
+            waveforms = client.get_waveforms_bulk(downloadlist,
                                               attach_response=False,longestonly=True)
-        print waveforms
+        except Exception,err:
+            print err
+            print 'ERROR WHILE DOWNLOADING'
+            continue
+
+        #---- write to file ----
+        try:
+            inventory.write(path_stations,format='STATIONXML')
+            events.write(path_events,format='QUAKEML')
+            waveforms.write(path_mseed,format='MSEED')
+        except Exception,err:
+            print err
+            print 'SAVING ERROR'
+            continue
+
+        print '{:d} waveforms written'.format(len(waveforms))
 
 #---- create Directory ----
 def create_dir(dirname):
