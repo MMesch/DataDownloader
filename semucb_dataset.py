@@ -6,6 +6,7 @@ noise level of each data trace from SEMUCB
 from obspy.fdsn.client import Client
 from ndk_rec_file import NDKFile,RecFile
 import os
+import time
 
 #==== MAIN FUNCTION ====
 def main():
@@ -35,8 +36,9 @@ def main():
 
     #==== LOOP THROUGH EVENTS ====
     client = Client('Iris')
-    for name,event in zip(evcatalogue.names,evcatalogue.events):
+    for name,event in zip(evcatalogue.names[0:1],evcatalogue.events[0:1]):
         print '---- {:s} ----'.format(name)
+        runtime = time.time()
         fname_events   = '{:s}_events.xml'.format(name)
         fname_stations = '{:s}_stations.xml'.format(name)
         fname_mseed    = '{:s}_waveforms.mseed'.format(name)
@@ -55,7 +57,7 @@ def main():
         #---- prepare redownload ----
         tstart = event.origin+event.ctime+t1
         tend   = event.origin+event.ctime+t2
-        downloadlist = [('*',stat,'*','LHZ',tstart,tend) for stat in unique_stations]
+        downloadlist = [('*',stat,'*','LH*',tstart,tend) for stat in unique_stations]
 
         print 'downloading ...'.format(tstart,tend)
         try:
@@ -79,6 +81,7 @@ def main():
             continue
 
         print '{:d} waveforms written'.format(len(waveforms))
+        print 'runtime {}'.format(time.time()-runtime)
 
 #---- create Directory ----
 def create_dir(dirname):
